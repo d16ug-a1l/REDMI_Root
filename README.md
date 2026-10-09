@@ -11,6 +11,9 @@
 - 效果：临时 Root + KernelSU（越狱模式 / LKM，不解锁 BL、不改 boot 镜像）
 - 真机门禁：连续 2 次冷启动全链路通过（记录见 `docs/device-gate-DIZI-01.md`）
 
+> 📖 **零基础学习 / 完整复现教程**（含原理图解与逐行脚本讲解）：
+> [docs/tutorial.md](docs/tutorial.md)
+
 ## 工作原理（简版）
 
 利用内核 `remove_waiter()` 在 PI-futex 回滚路径操作错误任务的漏洞
