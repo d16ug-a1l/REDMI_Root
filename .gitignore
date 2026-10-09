@@ -1,0 +1,4 @@
+build/
+*.so
+local.properties
+.DS_Store
