@@ -1,5 +1,13 @@
 # REDMI_Root — Redmi Pad Pro 内核 Root 方案
 
+<div align="center">
+
+[![哔哩哔哩 B 站主页](https://img.shields.io/badge/%E5%93%94%E5%93%A9%E5%93%94%E5%93%A9-B%E7%AB%99%E4%B8%BB%E9%A1%B5-00A1D6?style=for-the-badge&logo=bilibili&logoColor=white)](https://space.bilibili.com/22940901)
+
+📺 **关注我的 B 站主页：<https://space.bilibili.com/22940901>** 📺
+
+</div>
+
 针对 **Redmi Pad Pro / POCO Pad（dizi，代号 parrot）** 的一键内核 Root 工具。
 基于 CVE-2026-43499（futex PI UAF，上游项目
 [YuKongA/ghostlock-app](https://github.com/YuKongA/ghostlock-app) 的 select_stack 路由）
