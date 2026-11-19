@@ -138,7 +138,11 @@ resolve_adb || exit 1
 select_profile() {
     local rel
     rel=$("$ADB" shell uname -r 2>/dev/null | tr -d '\r')
-    if [ -n "$rel" ] && [ -f "profiles/$rel.bin" ]; then
+    if [ -z "$rel" ]; then
+        echo "[*] 暂时读不到内核版本（adb 抖动），稍后重试"
+        return 2
+    fi
+    if [ -f "profiles/$rel.bin" ]; then
         PROFILE="profiles/$rel.bin"
         echo "[*] 内核 $rel → $PROFILE"
         return 0
@@ -155,7 +159,7 @@ select_profile() {
 }
 
 wait_device() {
-    local serial state line="" last="" n=0
+    local serial state line="" last="" n=0 booted=0
     while true; do
         # 网络 adb：重启后 adbd 需要重连，每轮自动 connect
         if [ -n "$REDMI_ROOT_ADB_IP" ]; then
@@ -169,9 +173,14 @@ wait_device() {
         case "$state" in
             device)
                 if [ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
-                    return 0
+                    booted=$((booted + 1))
+                    # 连续两次确认（与验证流程一致），防止对半开机的系统发射 exploit
+                    [ "$booted" -ge 2 ] && return 0
+                    line="开机已完成，二次确认中…"
+                else
+                    booted=0
+                    line="设备已连接，等待开机完成…"
                 fi
-                line="设备已连接，等待开机完成…"
                 ;;
             unauthorized)
                 line="平板已连接但未授权：请在平板上的 USB 调试指纹弹窗点允许"
@@ -215,11 +224,17 @@ ATTEMPT=0
 while true; do
     ATTEMPT=$((ATTEMPT+1))
     wait_device
-    [ -n "$PROFILE" ] || { select_profile || exit 1; }
+    if [ -z "$PROFILE" ]; then
+        select_profile
+        rc=$?
+        [ "$rc" -eq 2 ] && { sleep 3; continue; }   # 瞬态读不到，稍后重试
+        [ "$rc" -eq 0 ] || exit 1                    # 真正不支持的内核
+    fi
 
     # 已 root 则直接结束
     if "$ADB" shell "su -c id" 2>/dev/null | grep -q "uid=0"; then
         echo "== KernelSU 已激活，无需操作"
+        "$ADB" shell "su -c id" 2>/dev/null | tr -d '\r'
         exit 0
     fi
 
@@ -228,10 +243,10 @@ while true; do
         # phase 1: W1 → permissive
         echo "== 第 $ATTEMPT 次: W1 (SELinux) $(date '+%H:%M:%S')"
         push_all || { echo "   [-] 部署校验失败，3 秒后重试"; sleep 3; continue; }
-        "$ADB" shell "cd /data/local/tmp && ./ghostlock --load-prebuilt-profile /data/local/tmp/profile.bin --stop-after-w1" > /dev/null 2>&1
+        "$ADB" shell "cd /data/local/tmp && ./ghostlock --load-prebuilt-profile profile.bin --stop-after-w1 > reroot_w1.log 2>&1" > /dev/null 2>&1
         ENF=$("$ADB" shell "cat /sys/fs/selinux/enforce" 2>/dev/null | tr -d '\r')
         if [ "$ENF" != "0" ]; then
-            echo "   W1 未命中（设备可能重启了，等待重连...）"
+            echo "   W1 未命中（设备日志 /data/local/tmp/reroot_w1.log；设备可能重启了，等待重连...）"
             sleep 3
             continue
         fi
@@ -244,9 +259,10 @@ while true; do
         ENF=$("$ADB" shell "cat /sys/fs/selinux/enforce" 2>/dev/null | tr -d '\r')
         [ "$ENF" != "0" ] && break   # 重启了，回 phase 1
         push_all || { sleep 2; continue; }
-        "$ADB" shell "cd /data/local/tmp && ./ghostlock --load-prebuilt-profile /data/local/tmp/profile.bin" > /dev/null 2>&1
+        "$ADB" shell "cd /data/local/tmp && ./ghostlock --load-prebuilt-profile profile.bin > reroot_w2.log 2>&1" > /dev/null 2>&1
         if "$ADB" shell "su -c id" 2>/dev/null | grep -q "uid=0"; then
             echo "== ROOTED + KernelSU 已激活（第 $ATTEMPT 次第 $i 次尝试）"
+            "$ADB" shell "su -c id" 2>/dev/null | tr -d '\r'
             exit 0
         fi
         sleep 2
