@@ -38,23 +38,25 @@
 ## 要求
 
 - 上述机型与内核版本（设置 → 关于平板 → 内核版本核对）
-- 一台电脑（macOS / Linux），装好 **Android SDK Platform-Tools**（adb）
+- 一台电脑：**Linux 空机即可**（`./build.sh` 自动下载全部组件），或 macOS（需自装 NDK 与 platform-tools）
 - 平板开启 **USB 调试**（开发者选项）
 - 平板安装 [KernelSU 管理器](https://github.com/tiann/KernelSU/releases) APK
   （Root 脚本会自动从管理器 APK 中提取 ksud 完成模块加载）
 
-## 构建
+## 构建（Linux 空机一键）
 
 ```bash
-# 安装 Android NDK（任一方式），然后：
 ./build.sh
 ```
 
-产物：`build/native/ghostlock`。脚本会自动探测常见 NDK 路径
-（含 Android Studio 的 `~/Android/Sdk/ndk`、`$ANDROID_SDK_ROOT/ndk` 及
-`/opt/android-sdk/ndk` 等 Linux 常见位置）；手动安装时从
-[NDK 下载页](https://developer.android.com/ndk/downloads) 解压后指定：
+在一台全新的 Linux 机器上直接运行即可：脚本自动探测本机 NDK
+（`~/Android/Sdk/ndk`、`$ANDROID_SDK_ROOT/ndk`、`/opt/android-sdk/ndk` 等），
+找不到时**自动下载**官方 NDK r28b（约 700 MB，仅首次，装入 `.ndk/`）与
+platform-tools/adb（约 10 MB，装入 `.tools/`）；系统缺 `make` 时改用 NDK
+自带的。只要求 `curl` 或 `wget` 之一 + `unzip` / `bsdtar` / `python3` 之一
+（主流发行版默认都有）。已有 NDK 想跳过下载：
 `ANDROID_NDK_HOME=/path/to/android-ndk-rXX ./build.sh`。
+macOS 暂不自动下载（按提示自装 NDK）。产物：`build/native/ghostlock`。
 
 profile 已预构建（`profiles/*.bin`），随源码附 `.conf` 原文供参考，
 一般无需重新生成。
