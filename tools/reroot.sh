@@ -6,7 +6,22 @@
 cd "$(dirname "$0")/.." || exit 1
 
 BIN=build/native/ghostlock
-PROFILE="profiles/5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284.bin"
+PROFILE=""   # 首次连上设备后按 uname -r 自动选择（profiles/<内核版本>.bin）
+
+# 按设备内核版本选择 profile：profile 与内核构建逐字节绑定（符号偏移/结构体
+# 尺寸随构建变化），版本不匹配会导致写入错位甚至 panic。
+select_profile() {
+    local rel
+    rel=$(adb shell uname -r 2>/dev/null | tr -d '\r')
+    if [ -n "$rel" ] && [ -f "profiles/$rel.bin" ]; then
+        PROFILE="profiles/$rel.bin"
+        echo "[*] 内核 $rel → $PROFILE"
+        return 0
+    fi
+    echo "[!] 暂不支持内核 $rel（缺少 profiles/$rel.bin）。已支持的 profile："
+    ls profiles/*.bin 2>/dev/null | sed 's/^/    /'
+    return 1
+}
 
 wait_device() {
     while true; do
@@ -32,6 +47,7 @@ ATTEMPT=0
 while true; do
     ATTEMPT=$((ATTEMPT+1))
     wait_device
+    [ -n "$PROFILE" ] || { select_profile || exit 1; }
 
     # 已 root 则直接结束
     if adb shell "su -c id" 2>/dev/null | grep -q "uid=0"; then

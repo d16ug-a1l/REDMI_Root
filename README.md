@@ -14,10 +14,15 @@
 完成对该机型的完整适配与真机验证。
 
 - 设备：Redmi Pad Pro (2405CRPFDC) / POCO Pad
-- 内核：`5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284`
-- 系统：HyperOS 3（Android 16）实测通过
+- 支持内核（`tools/reroot.sh` 按 `uname -r` 自动选择对应 profile）：
+
+  | 系统 | 内核版本（设置 → 关于平板 → 内核版本） | 真机门禁 |
+  |---|---|---|
+  | HyperOS 3 OS3.0.307.0.WNSCNXM | `5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284` | 连续 2 次冷启动全链路通过（`docs/device-gate-DIZI-01.md`） |
+  | HyperOS 3 OS3.0.308.0.WNSCNXM | `5.10.246-android12-9-00012-g730d06ec05ff-ab15159037` | 全链路 PASS + 重启后 ~70 s 自动重取（`docs/device-gate-DIZI-02.md`） |
+
 - 效果：临时 Root + KernelSU（越狱模式 / LKM，不解锁 BL、不改 boot 镜像）
-- 真机门禁：连续 2 次冷启动全链路通过（记录见 `docs/device-gate-DIZI-01.md`）
+- 其他内核版本不可直接使用：profile 与内核构建逐字节绑定（符号偏移 / 结构体尺寸随构建变化），需按 `docs/tutorial.md` 的推导方法重新适配
 
 > 📖 **零基础学习 / 完整复现教程**（含原理图解与逐行脚本讲解）：
 > [docs/tutorial.md](docs/tutorial.md)
