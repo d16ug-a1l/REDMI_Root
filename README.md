@@ -53,7 +53,9 @@
 （`~/Android/Sdk/ndk`、`$ANDROID_SDK_ROOT/ndk`、`/opt/android-sdk/ndk` 等），
 找不到时**自动下载**官方 NDK r28b（约 700 MB，仅首次，装入 `.ndk/`）与
 platform-tools/adb（约 10 MB，装入 `.tools/`）；系统缺 `make` 时改用 NDK
-自带的。只要求 `curl` 或 `wget` 之一 + `unzip` / `bsdtar` / `python3` 之一
+自带的。下载源**自动测速选择**（官方源与腾讯云镜像，国内网络无需代理），
+也可强制指定：`REDMI_ROOT_MIRROR=https://mirrors.cloud.tencent.com/AndroidSDK ./build.sh`。
+只要求 `curl` 或 `wget` 之一 + `unzip` / `bsdtar` / `python3` 之一
 （主流发行版默认都有）。已有 NDK 想跳过下载：
 `ANDROID_NDK_HOME=/path/to/android-ndk-rXX ./build.sh`。
 macOS 暂不自动下载（按提示自装 NDK）。产物：`build/native/ghostlock`。

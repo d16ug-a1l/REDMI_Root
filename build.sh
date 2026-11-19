@@ -6,8 +6,12 @@ set -e
 cd "$(dirname "$0")"
 
 NDK_VERSION=r28b   # = 28.1.13356706，与本仓库真机验证过的构建一致
-NDK_ZIP_URL="https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip"
-PT_ZIP_URL="https://dl.google.com/android/repository/platform-tools-latest-linux.zip"
+NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip"
+PT_ZIP="platform-tools-latest-linux.zip"
+# 下载源自动测速选择（国内网络下腾讯镜像通常远快于官方源）。
+# 可用 REDMI_ROOT_MIRROR=<基址> 强制指定，例如：
+#   REDMI_ROOT_MIRROR=https://mirrors.cloud.tencent.com/AndroidSDK ./build.sh
+MIRROR_RANKED=()   # 按 "名称|基址" 依速度降序存放，首次下载时填充
 
 fetch() { # fetch <url> <输出文件> —— 带进度条的下载
     local url="$1" out="$2" total="" pid size mb tmb pct filled i bar spin n
@@ -69,6 +73,56 @@ fetch() { # fetch <url> <输出文件> —— 带进度条的下载
     return 1
 }
 
+resolve_mirror() { # resolve_mirror <zip 文件名> —— 各源采样 1MB 实测下载速度并排序
+    local file="$1" name base speed line
+    local avail=()
+    if [ -n "$REDMI_ROOT_MIRROR" ]; then
+        set -- "手动指定|$REDMI_ROOT_MIRROR"
+    else
+        set -- "官方|https://dl.google.com/android/repository" \
+               "腾讯镜像|https://mirrors.cloud.tencent.com/AndroidSDK"
+    fi
+    echo "[*] 下载源测速（每源采样 1 MB，最长 10 秒）："
+    for line in "$@"; do
+        name="${line%%|*}"; base="${line#*|}"
+        # 注意：--max-time 超时退出时 curl 仍会输出实测速度（慢速源按平均速度参与排序），
+        # 只有完全连不上 / 404 时 speed_download 才为 0。
+        probe=$(curl -fsSL -r 0-1048575 --max-time 10 --max-filesize 3145728 \
+                    -o /dev/null -w '%{speed_download}' "$base/$file" 2>/dev/null) || true
+        speed=$(awk -v s="${probe:-0}" 'BEGIN{printf "%d", s + 0.5}')
+        if [ "$speed" -gt 0 ]; then
+            awk "BEGIN{printf \"    %s: %.1f MB/s\n\", \"$name\", $speed/1048576}"
+            avail+=("$speed|$name|$base")
+        else
+            echo "    $name: 不可用"
+        fi
+    done
+    if [ "${#avail[@]}" -eq 0 ]; then
+        echo "[!] 所有下载源均不可用：检查网络，或设 REDMI_ROOT_MIRROR=<基址> 手动指定"
+        return 1
+    fi
+    MIRROR_RANKED=()
+    while IFS='|' read -r _ name base; do
+        MIRROR_RANKED+=("$name|$base")
+    done < <(printf '%s\n' "${avail[@]}" | sort -t'|' -k1,1rn)
+    echo "[*] 使用最快源: ${MIRROR_RANKED[0]%%|*}"
+}
+
+fetch_component() { # fetch_component <zip 文件名> <本地输出路径> —— 测速选源后下载，失败自动换源
+    local zip="$1" out="$2" c
+    if [ "${#MIRROR_RANKED[@]}" -eq 0 ]; then
+        resolve_mirror "$zip" || return 1
+    fi
+    for c in "${MIRROR_RANKED[@]}"; do
+        if fetch "${c#*|}/$zip" "$out"; then
+            return 0
+        fi
+        echo "[!] 从 ${c%%|*} 下载失败，尝试下一个源"
+    done
+    MIRROR_RANKED=()   # 全部失败：下次下载重新测速
+    return 1
+}
+
 extract_zip() { # extract_zip <zip> <目标目录>
     if command -v unzip >/dev/null 2>&1; then
         unzip -q "$1" -d "$2"
@@ -113,7 +167,7 @@ if { [ -z "$ANDROID_NDK_HOME" ] || [ ! -d "$ANDROID_NDK_HOME" ]; } && [ "$(uname
             exit 1
         fi
         mkdir -p .ndk
-        fetch "$NDK_ZIP_URL" ".ndk/ndk.zip"
+        fetch_component "$NDK_ZIP" ".ndk/ndk.zip"
         extract_zip ".ndk/ndk.zip" .ndk
         rm -f .ndk/ndk.zip
         echo "[+] NDK ${NDK_VERSION} 安装完成: .ndk/android-ndk-${NDK_VERSION}"
@@ -169,7 +223,7 @@ echo "[+] 构建成功: $BIN"
 if [ -z "$(command -v adb || true)" ] && [ ! -x ".tools/platform-tools/adb" ] && [ "$(uname -s)" = "Linux" ]; then
     echo "[*] 未检测到 adb，自动下载 platform-tools 到 .tools/（约 10 MB）"
     mkdir -p .tools
-    fetch "$PT_ZIP_URL" ".tools/pt.zip"
+    fetch_component "$PT_ZIP" ".tools/pt.zip"
     extract_zip ".tools/pt.zip" .tools
     rm -f .tools/pt.zip
 fi
