@@ -43,6 +43,12 @@
 - 平板安装 [KernelSU 管理器](https://github.com/tiann/KernelSU/releases) APK
   （Root 脚本会自动从管理器 APK 中提取 ksud 完成模块加载）
 
+> **WSL 用户注意**：WSL2 的 USB 设备默认归 Windows 侧，Linux 里的 adb 看不到平板
+>（表现为 `reroot.sh` 一直等设备）。脚本会自动探测并改用 Windows 侧的 adb.exe
+>（在 Windows 装 [platform-tools](https://developer.android.com/tools/releases/platform-tools) 即可）；
+> 也可走网络 adb（平板与电脑同一局域网）：`REDMI_ROOT_ADB_IP=<平板IP> tools/reroot.sh`；
+> 或 `REDMI_ROOT_ADB=<adb路径>` 手动指定任意 adb。
+
 ## 构建（Linux 空机一键）
 
 ```bash
