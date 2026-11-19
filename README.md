@@ -45,7 +45,10 @@
 
 > **WSL 用户注意**：WSL2 的 USB 设备默认归 Windows 侧，Linux 里的 adb 看不到平板
 >（表现为 `reroot.sh` 一直等设备）。脚本会自动探测并改用 Windows 侧的 adb.exe
->（在 Windows 装 [platform-tools](https://developer.android.com/tools/releases/platform-tools) 即可）；
+>（在 Windows 装 [platform-tools](https://developer.android.com/tools/releases/platform-tools) 即可，
+> scoop / chocolatey / Android SDK / Windows PATH 等常见位置均可识别）；自动探测
+> 失败时会**交互询问** adb.exe 的位置（直接粘贴 `C:\…\adb.exe` 即可，输入一次即记住），
+> 或按提示把 adb 加入 Windows 系统 PATH 后新开终端重跑；
 > 也可走网络 adb（平板与电脑同一局域网）：`REDMI_ROOT_ADB_IP=<平板IP> tools/reroot.sh`；
 > 或 `REDMI_ROOT_ADB=<adb路径>` 手动指定任意 adb。
 

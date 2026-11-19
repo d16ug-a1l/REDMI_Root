@@ -28,8 +28,54 @@ wsl_adb() { # adb.exe 包装：本地文件参数转 UNC 路径，剥离 CR
     "$ADB_EXE" "${args[@]}" 2>&1 | tr -d '\r'
 }
 
+to_wsl_path() { # 支持 C:\x\adb.exe / C:/x/adb.exe / /mnt/... / ~/... → WSL 路径
+    local p="$1" drive rest
+    case "$p" in
+        '~'*) p="$HOME${p#\~}" ;;
+    esac
+    case "$p" in
+        [A-Za-z]:\\*|[A-Za-z]:/*)
+            if command -v wslpath >/dev/null 2>&1; then
+                wslpath -u "$p"
+            else
+                drive="$(printf '%s' "${p:0:1}" | tr 'A-Z' 'a-z')"
+                rest="${p:2}"
+                printf '/mnt/%s%s' "$drive" "$(printf '%s' "$rest" | tr '\\' '/')"
+            fi
+            ;;
+        *)  printf '%s' "$p" ;;
+    esac
+}
+
+prompt_windows_adb() { # WSL 下自动探测失败时：询问路径，或引导加入 Windows PATH
+    local ans path tries=0
+    # 非交互（管道/CI）不询问，避免卡死
+    [ -t 0 ] || { echo "[*] 非交互环境，跳过询问"; return 1; }
+    echo "[?] 未在常见位置找到 Windows 的 adb.exe，两种方式任选："
+    echo "    1. 直接输入 adb.exe 的路径（Windows 风格 C:\\...\\adb.exe 或 WSL 风格 /mnt/c/... 均可）"
+    echo "    2. 或把 adb 所在目录加入 Windows 系统 PATH："
+    echo "       Win+R 输入 sysdm.cpl → 高级 → 环境变量 → Path → 编辑 → 新建 →"
+    echo "       填入 platform-tools 目录 → 确定后【新开】本终端重新运行本脚本"
+    while [ "$tries" -lt 3 ]; do
+        tries=$((tries + 1))
+        printf "    adb.exe 路径（直接回车跳过）: "
+        read -r ans
+        [ -z "$ans" ] && return 1
+        path=$(to_wsl_path "$ans")
+        if [ -n "$path" ] && [ -x "$path" ]; then
+            mkdir -p .tools && printf '%s\n' "$path" > .tools/win-adb-path
+            echo "[*] 已记住该路径（.tools/win-adb-path，删除该文件可重新询问）"
+            ADB_EXE="$path"
+            ADB=wsl_adb
+            return 0
+        fi
+        echo "    [!] $path 不存在或不可执行，请重试"
+    done
+    return 1
+}
+
 resolve_adb() {
-    local c
+    local c saved
     if [ -n "$REDMI_ROOT_ADB" ]; then
         ADB="$REDMI_ROOT_ADB"
         echo "[*] adb(手动指定): $ADB"
@@ -48,6 +94,16 @@ resolve_adb() {
                 return 0
             fi
         done
+        # 上次询问时记住的路径
+        if [ -s .tools/win-adb-path ]; then
+            saved="$(head -n1 .tools/win-adb-path)"
+            if [ -x "$saved" ]; then
+                ADB_EXE="$saved"
+                ADB=wsl_adb
+                echo "[*] adb(WSL→Windows,已记住): $saved"
+                return 0
+            fi
+        fi
         # adb.exe 在 Windows PATH 里（WSL interop 会把它带进 Linux PATH）
         if command -v adb.exe >/dev/null 2>&1; then
             ADB_EXE="$(command -v adb.exe)"
@@ -55,7 +111,12 @@ resolve_adb() {
             echo "[*] adb(WSL→Windows PATH): $ADB_EXE"
             return 0
         fi
-        echo "[*] WSL 环境但未找到 Windows adb.exe（在 Windows 侧安装 platform-tools 后体验最佳）"
+        # 交互询问：输入路径或引导加入 Windows PATH
+        if prompt_windows_adb; then
+            echo "[*] adb(WSL→Windows,手动): $ADB_EXE"
+            return 0
+        fi
+        echo "[*] 跳过 Windows adb，回退 Linux adb（WSL 下 USB 设备不可见，仅适合网络 adb）"
     fi
     if command -v adb >/dev/null 2>&1; then
         ADB="$(command -v adb)"
