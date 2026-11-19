@@ -9,15 +9,46 @@ NDK_VERSION=r28b   # = 28.1.13356706，与本仓库真机验证过的构建一�
 NDK_ZIP_URL="https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip"
 PT_ZIP_URL="https://dl.google.com/android/repository/platform-tools-latest-linux.zip"
 
-fetch() { # fetch <url> <输出文件>
+fetch() { # fetch <url> <输出文件> —— 带进度显示的下载
+    local url="$1" out="$2" total="" pid size mb tmb pct
+    # 预取 Content-Length 用于百分比（拿不到则退化为只显示已下载量）
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL --retry 3 --retry-delay 2 -o "$2" "$1"
+        total=$(curl -sIL "$url" 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="content-length:"{v=$2} END{print v}')
     elif command -v wget >/dev/null 2>&1; then
-        wget -q --tries=3 -O "$2" "$1"
+        total=$(wget -q --spider --server-response "$url" 2>&1 | tr -d '\r' | awk 'tolower($1)=="content-length:"{v=$2} END{print v}')
+    fi
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --retry 3 --retry-delay 2 -o "$out" "$url" &
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q --tries=3 -O "$out" "$url" &
     else
         echo "[!] 需要 curl 或 wget 下载组件（如 sudo apt install curl）"
         return 1
     fi
+    pid=$!
+    # 进度：终端里单行刷新；管道/日志里每 5 秒一行
+    while kill -0 "$pid" 2>/dev/null; do
+        size=$(wc -c < "$out" 2>/dev/null || echo 0)
+        size=$((size + 0))
+        if [ -n "$total" ] && [ "$total" -gt 0 ] 2>/dev/null; then
+            mb=$((size / 1048576)); tmb=$((total / 1048576)); pct=$((size * 100 / total))
+            if [ -t 2 ]; then
+                printf '\r    下载中 %d/%d MB (%d%%)  ' "$mb" "$tmb" "$pct" >&2
+            else
+                echo "    下载中 $mb/$tmb MB ($pct%)"
+            fi
+        else
+            mb=$((size / 1048576))
+            if [ -t 2 ]; then
+                printf '\r    下载中 %d MB  ' "$mb" >&2
+            else
+                echo "    下载中 $mb MB"
+            fi
+        fi
+        sleep 5
+    done
+    [ -t 2 ] && printf '\n' >&2
+    wait "$pid"
 }
 
 extract_zip() { # extract_zip <zip> <目标目录>
