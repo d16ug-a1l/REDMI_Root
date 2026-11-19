@@ -6,12 +6,15 @@ set -e
 cd "$(dirname "$0")"
 
 NDK_VERSION=r28b   # = 28.1.13356706，与本仓库真机验证过的构建一致
+NDK_DIR=".ndk/android-ndk-${NDK_VERSION}"
 NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip"
 PT_ZIP="platform-tools-latest-linux.zip"
 # 下载源自动测速选择（国内网络下腾讯镜像通常远快于官方源）。
 # 可用 REDMI_ROOT_MIRROR=<基址> 强制指定，例如：
 #   REDMI_ROOT_MIRROR=https://mirrors.cloud.tencent.com/AndroidSDK ./build.sh
 MIRROR_RANKED=()   # 按 "名称|基址" 依速度降序存放，首次下载时填充
+
+# ---- 组件函数 ----
 
 fetch() { # fetch <url> <输出文件> —— 带进度条的下载
     local url="$1" out="$2" total="" pid size mb tmb pct filled i bar spin n
@@ -74,7 +77,7 @@ fetch() { # fetch <url> <输出文件> —— 带进度条的下载
 }
 
 resolve_mirror() { # resolve_mirror <zip 文件名> —— 各源采样 1MB 实测下载速度并排序
-    local file="$1" name base speed line
+    local file="$1" name base speed line probe
     local avail=()
     if [ -n "$REDMI_ROOT_MIRROR" ]; then
         set -- "手动指定|$REDMI_ROOT_MIRROR"
@@ -129,71 +132,141 @@ extract_zip() { # extract_zip <zip> <目标目录>
     elif command -v bsdtar >/dev/null 2>&1; then
         bsdtar -xf "$1" -C "$2"
     elif command -v python3 >/dev/null 2>&1; then
-        # python 的 zipfile 不保留可执行位，解压后统一补上
-        python3 -m zipfile -e "$1" "$2"
-        find "$2" -type d -exec chmod 755 {} +
-        find "$2" -type f -exec chmod 755 {} +
+        # python 的 zipfile -e 不支持符号链接与权限位（NDK 的 clang++ 等
+        # 全是符号链接，解丢后工具链直接报废），这里手动还原。
+        python3 - "$1" "$2" <<'PYEOF'
+import os, sys, stat, zipfile
+zf = zipfile.ZipFile(sys.argv[1])
+dest = sys.argv[2]
+for info in zf.infolist():
+    path = os.path.join(dest, *info.filename.split('/'))
+    mode = info.external_attr >> 16
+    if stat.S_ISLNK(mode):
+        target = zf.read(info).decode()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        if os.path.lexists(path):
+            os.remove(path)
+        os.symlink(target, path)
+    elif info.is_dir():
+        os.makedirs(path, exist_ok=True)
+    else:
+        zf.extract(info, dest)
+        perm = mode & 0o777
+        if perm:
+            os.chmod(path, perm)
+PYEOF
     else
         echo "[!] 需要 unzip / bsdtar / python3 之一解压（如 sudo apt install unzip）"
         return 1
     fi
 }
 
-# ---------- 1. 定位 / 下载 NDK ----------
-if [ -z "$ANDROID_NDK_HOME" ] && [ -z "$ANDROID_NDK_ROOT" ]; then
-    for c in "$ANDROID_SDK_ROOT/ndk" "$ANDROID_HOME/ndk" \
-             "$HOME/Android/Sdk/ndk" "$HOME/android-sdk/ndk" "$HOME/Library/Android/sdk/ndk" \
-             /opt/android-sdk/ndk /usr/lib/android-sdk/ndk /usr/lib/android-ndk \
-             /opt/homebrew/share/android-commandlinetools/ndk; do
-        # 跳过未设置的环境变量拼出来的 "/ndk"
-        if [ -n "${c//\/ndk}" ] && [ -d "$c" ]; then
-            ANDROID_NDK_HOME="$c/$(ls -1 "$c" | sort -V | tail -1)"
-            break
-        fi
-    done
-fi
-# 只设了 ANDROID_NDK_ROOT 的用户同样可用
-ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_NDK_ROOT}"
-
-if { [ -z "$ANDROID_NDK_HOME" ] || [ ! -d "$ANDROID_NDK_HOME" ]; } && [ "$(uname -s)" = "Linux" ]; then
-    # 一键模式：自动下载官方 NDK（约 700 MB，仅首次；解压后约 3 GB，装入 .ndk/）
-    if [ -d ".ndk/android-ndk-${NDK_VERSION}" ]; then
-        ANDROID_NDK_HOME=".ndk/android-ndk-${NDK_VERSION}"
+_detect_ndk() { # 探测环境变量与常见安装位置 → ANDROID_NDK_HOME（可为空）
+    local env_home="${ANDROID_NDK_HOME:-}" env_root="${ANDROID_NDK_ROOT:-}" c
+    ANDROID_NDK_HOME=""
+    if [ -n "$env_home" ]; then
+        ANDROID_NDK_HOME="$env_home"
+    elif [ -n "$env_root" ]; then
+        ANDROID_NDK_HOME="$env_root"
     else
-        echo "[*] 未找到 NDK，开始自动下载 ${NDK_VERSION}（约 700 MB，仅首次运行需要）"
-        avail=$(df -Pk . | awk 'NR==2{print $4}')
-        if [ "${avail:-0}" -lt 3200000 ]; then
-            echo "[!] 磁盘剩余空间不足 3 GB，无法自动安装 NDK；请手动指定 ANDROID_NDK_HOME"
-            exit 1
-        fi
-        mkdir -p .ndk
-        fetch_component "$NDK_ZIP" ".ndk/ndk.zip"
-        extract_zip ".ndk/ndk.zip" .ndk
-        rm -f .ndk/ndk.zip
-        echo "[+] NDK ${NDK_VERSION} 安装完成: .ndk/android-ndk-${NDK_VERSION}"
-        ANDROID_NDK_HOME=".ndk/android-ndk-${NDK_VERSION}"
+        for c in "$ANDROID_SDK_ROOT/ndk" "$ANDROID_HOME/ndk" \
+                 "$HOME/Android/Sdk/ndk" "$HOME/android-sdk/ndk" "$HOME/Library/Android/sdk/ndk" \
+                 /opt/android-sdk/ndk /usr/lib/android-sdk/ndk /usr/lib/android-ndk \
+                 /opt/homebrew/share/android-commandlinetools/ndk; do
+            # 跳过未设置的环境变量拼出来的 "/ndk"
+            if [ -n "${c//\/ndk}" ] && [ -d "$c" ]; then
+                ANDROID_NDK_HOME="$c/$(ls -1 "$c" | sort -V | tail -1)"
+                break
+            fi
+        done
     fi
-fi
+}
 
-if [ -z "$ANDROID_NDK_HOME" ] || [ ! -d "$ANDROID_NDK_HOME" ]; then
-    echo "[!] 找不到 Android NDK。请安装 NDK，或显式指定位置："
-    echo "        ANDROID_NDK_HOME=/path/to/android-ndk-rXX ./build.sh"
-    echo "    Linux: 重跑 ./build.sh 可自动下载；或从 https://developer.android.com/ndk/downloads 手动安装"
-    echo "    macOS: brew install --cask android-commandlinetools 后装 NDK，"
-    echo "           或直接 https://developer.android.com/ndk/downloads"
-    exit 1
-fi
-if [ ! -d "$ANDROID_NDK_HOME/toolchains/llvm" ]; then
-    echo "[!] $ANDROID_NDK_HOME 不像 NDK 根目录（缺少 toolchains/llvm），请检查 ANDROID_NDK_HOME"
-    exit 1
-fi
-# 相对路径转绝对路径，避免 make 子进程解析歧义
-case "$ANDROID_NDK_HOME" in
-    /*) ;;
-    *) ANDROID_NDK_HOME="$(cd "$ANDROID_NDK_HOME" && pwd)" ;;
-esac
-echo "[*] NDK: $ANDROID_NDK_HOME"
-export ANDROID_NDK_HOME
+_download_ndk() { # Linux 且本机没有 → 自动下载解压到 .ndk/
+    [ "$(uname -s)" = "Linux" ] || return 1
+    if [ -d "$NDK_DIR" ]; then
+        ANDROID_NDK_HOME="$NDK_DIR"
+        return 0
+    fi
+    echo "[*] 未找到 NDK，开始自动下载 ${NDK_VERSION}（约 700 MB，仅首次运行需要）"
+    local avail
+    avail=$(df -Pk . | awk 'NR==2{print $4}')
+    if [ "${avail:-0}" -lt 3200000 ]; then
+        echo "[!] 磁盘剩余空间不足 3 GB，无法自动安装 NDK；请手动指定 ANDROID_NDK_HOME"
+        exit 1
+    fi
+    mkdir -p .ndk
+    fetch_component "$NDK_ZIP" ".ndk/ndk.zip"
+    extract_zip ".ndk/ndk.zip" .ndk
+    rm -f .ndk/ndk.zip
+    echo "[+] NDK ${NDK_VERSION} 安装完成: $NDK_DIR"
+    ANDROID_NDK_HOME="$NDK_DIR"
+}
+
+_validate_ndk() { # 目录 / 工具链 / 符号链接完整性校验
+    local cxx
+    if [ -z "$ANDROID_NDK_HOME" ] || [ ! -d "$ANDROID_NDK_HOME" ]; then
+        echo "[!] 找不到 Android NDK。请安装 NDK，或显式指定位置："
+        echo "        ANDROID_NDK_HOME=/path/to/android-ndk-rXX ./build.sh"
+        echo "    Linux: 重跑 ./build.sh 可自动下载；或从 https://developer.android.com/ndk/downloads 手动安装"
+        echo "    macOS: brew install --cask android-commandlinetools 后装 NDK，"
+        echo "           或直接 https://developer.android.com/ndk/downloads"
+        return 1
+    fi
+    if [ ! -d "$ANDROID_NDK_HOME/toolchains/llvm" ]; then
+        echo "[!] $ANDROID_NDK_HOME 不像 NDK 根目录（缺少 toolchains/llvm），请检查 ANDROID_NDK_HOME"
+        return 1
+    fi
+    if [ "$(uname -s)" = "Linux" ]; then
+        cxx="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++"
+        # 损坏特征：本应是指向 clang 的符号链接，却成了内容为 "clang" 的文本文件
+        #（python zipfile 解压丢失符号链接的典型后果）
+        if [ -f "$cxx" ] && [ ! -L "$cxx" ] && ! head -c 4 "$cxx" 2>/dev/null | LC_ALL=C grep -q ELF; then
+            echo "[!] 工具链损坏：$cxx 不是 ELF 也不是符号链接"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+ensure_ndk() { # 定位/下载/校验 NDK；自动安装的若损坏则删除重装一次
+    local i
+    for i in 1 2; do
+        _detect_ndk
+        if [ -z "$ANDROID_NDK_HOME" ] || [ ! -d "$ANDROID_NDK_HOME" ]; then
+            _download_ndk || true
+        fi
+        if _validate_ndk; then
+            # 相对路径转绝对路径，避免 make 子进程解析歧义
+            case "$ANDROID_NDK_HOME" in
+                /*) ;;
+                *) ANDROID_NDK_HOME="$(cd "$ANDROID_NDK_HOME" && pwd)" ;;
+            esac
+            echo "[*] NDK: $ANDROID_NDK_HOME"
+            export ANDROID_NDK_HOME
+            return 0
+        fi
+        # 校验失败：自动安装的删除重试一次；用户手动指定的直接报错退出
+        # （此时可能是相对路径 .ndk/…，也可能已绝对化，两种都匹配）
+        case "$ANDROID_NDK_HOME" in
+            .ndk|.ndk/*|"$PWD"/.ndk|"$PWD"/.ndk/*)
+                echo "[*] 删除损坏的 $ANDROID_NDK_HOME 并重新下载"
+                rm -rf "$ANDROID_NDK_HOME"
+                ANDROID_NDK_HOME=""
+                ;;
+            *)
+                echo "[!] 请修复该 NDK 或重新指定 ANDROID_NDK_HOME 后重试"
+                return 1
+                ;;
+        esac
+    done
+    return 1
+}
+
+# ---- 主流程 ----
+
+# ---------- 1. 定位 / 下载 / 校验 NDK ----------
+ensure_ndk || exit 1
 
 # ---------- 2. make（系统没有时用 NDK 自带的） ----------
 if ! command -v make >/dev/null 2>&1; then
