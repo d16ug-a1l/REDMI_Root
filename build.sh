@@ -9,9 +9,12 @@ NDK_VERSION=r28b   # = 28.1.13356706，与本仓库真机验证过的构建一�
 NDK_ZIP_URL="https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip"
 PT_ZIP_URL="https://dl.google.com/android/repository/platform-tools-latest-linux.zip"
 
-fetch() { # fetch <url> <输出文件> —— 带进度显示的下载
-    local url="$1" out="$2" total="" pid size mb tmb pct
-    # 预取 Content-Length 用于百分比（拿不到则退化为只显示已下载量）
+fetch() { # fetch <url> <输出文件> —— 带进度条的下载
+    local url="$1" out="$2" total="" pid size mb tmb pct filled i bar spin n
+    local BAR_W=28
+    spin='-\|/'
+    n=0
+    # 预取 Content-Length 用于百分比（拿不到则退化为转圈+已下载量）
     if command -v curl >/dev/null 2>&1; then
         total=$(curl -sIL "$url" 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="content-length:"{v=$2} END{print v}')
     elif command -v wget >/dev/null 2>&1; then
@@ -26,29 +29,44 @@ fetch() { # fetch <url> <输出文件> —— 带进度显示的下载
         return 1
     fi
     pid=$!
-    # 进度：终端里单行刷新；管道/日志里每 5 秒一行
+    # 进度条：终端里单行刷新；管道/日志里每 5 秒一行
     while kill -0 "$pid" 2>/dev/null; do
-        size=$(wc -c < "$out" 2>/dev/null || echo 0)
+        if [ -f "$out" ]; then size=$(wc -c < "$out"); else size=0; fi
         size=$((size + 0))
         if [ -n "$total" ] && [ "$total" -gt 0 ] 2>/dev/null; then
             mb=$((size / 1048576)); tmb=$((total / 1048576)); pct=$((size * 100 / total))
+            filled=$((pct * BAR_W / 100))
+            bar=""
+            for ((i = 0; i < BAR_W; i++)); do
+                if [ "$i" -lt "$filled" ]; then bar+="█"; else bar+="░"; fi
+            done
             if [ -t 2 ]; then
-                printf '\r    下载中 %d/%d MB (%d%%)  ' "$mb" "$tmb" "$pct" >&2
+                printf '\r    下载中 [%s] %3d%% (%d/%d MB)   ' "$bar" "$pct" "$mb" "$tmb" >&2
             else
-                echo "    下载中 $mb/$tmb MB ($pct%)"
+                echo "    下载中 [$bar] $pct% ($mb/$tmb MB)"
             fi
         else
             mb=$((size / 1048576))
             if [ -t 2 ]; then
-                printf '\r    下载中 %d MB  ' "$mb" >&2
+                printf '\r    下载中 %s %3d MB   ' "${spin:n % 4:1}" "$mb" >&2
             else
                 echo "    下载中 $mb MB"
             fi
         fi
+        n=$((n + 1))
         sleep 5
     done
-    [ -t 2 ] && printf '\n' >&2
-    wait "$pid"
+    if wait "$pid"; then
+        # 终帧：补满 100%，避免进度条停在 9x%
+        if [ -n "$total" ] && [ "$total" -gt 0 ] 2>/dev/null; then
+            mb=$((total / 1048576))
+            bar=""
+            for ((i = 0; i < BAR_W; i++)); do bar+="█"; done
+            printf '\r    下载中 [%s] 100%% (%d/%d MB)   \n' "$bar" "$mb" "$mb" >&2
+        fi
+        return 0
+    fi
+    return 1
 }
 
 extract_zip() { # extract_zip <zip> <目标目录>
