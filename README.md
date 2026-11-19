@@ -50,8 +50,11 @@
 ./build.sh
 ```
 
-产物：`build/native/ghostlock`。脚本会自动探测常见 NDK 路径，
-也可手动指定：`ANDROID_NDK_HOME=/path/to/ndk ./build.sh`。
+产物：`build/native/ghostlock`。脚本会自动探测常见 NDK 路径
+（含 Android Studio 的 `~/Android/Sdk/ndk`、`$ANDROID_SDK_ROOT/ndk` 及
+`/opt/android-sdk/ndk` 等 Linux 常见位置）；手动安装时从
+[NDK 下载页](https://developer.android.com/ndk/downloads) 解压后指定：
+`ANDROID_NDK_HOME=/path/to/android-ndk-rXX ./build.sh`。
 
 profile 已预构建（`profiles/*.bin`），随源码附 `.conf` 原文供参考，
 一般无需重新生成。

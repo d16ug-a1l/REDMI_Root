@@ -1,7 +1,7 @@
 # DIZI-01 真机门禁：dizi 5.10.236 select_stack 全链路 — PASS
 
 基线提交 `67d519b`（上游 main）+ 本工作区未提交改动（批次 1/2/2c/2d/2e/3a，清单与验证见
-`docs/development/dizi-5.10-select-adaptation-plan.md`）。候选二进制
+`docs/adaptation-plan.md`）。候选二进制
 `build/native/ghostlock` SHA-256
 `cde2c59828586fbbecddf0f21a6c9f518028f9d26027fc0ef366f37a996648dc`（md5
 `2311977db70f5f2d2266a7e351983cb9`，与设备端一致）。设备端 profile bin md5

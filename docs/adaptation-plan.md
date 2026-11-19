@@ -1,7 +1,7 @@
 # dizi 5.10 select 路由适配计划（2026-10-08）
 
 > 按 `documentation-standards.md` 计划模板撰写。**全部批次已完成**（2026-10-09）：
-> 门禁连续 2 次冷机 PASS（记录 `docs/analysis/device-gates/DIZI-01-20261009-select-stack-pass.md`），
+> 门禁连续 2 次冷机 PASS（记录 `docs/device-gate-DIZI-01.md`），
 > dizi 已登记 SUPPORTED_DEVICES，KernelSU 越狱模式落地。
 
 ## 现状与基线
@@ -180,7 +180,7 @@ KERNEL-PANIC-01 纪律适用：任何新 panic 必须同构建复现 + 冷机复
   「工作中 [越狱模式]」。**dizi 5.10.236 select 路线全通。**
 - [x] **批次 3b/3c 完成（2026-10-09 03:0x-03:3x）**：连续 2 次冷启动全链路 PASS
   （v10 cycle 5 / v11 cycle 4，均 `KernelSU ready`）；门禁记录
-  `docs/analysis/device-gates/DIZI-01-20261009-select-stack-pass.md`；
+  `docs/device-gate-DIZI-01.md`；
   SUPPORTED_DEVICES 双语登记；conf 摘除 "unverified" 标注。
 - [x] A/B 对照：pre3a vs 3a 构建 W1 命中率一致（各 1/3），批次 3a 无回归。
 - [x] iomem 校准核对：root 后 `/proc/iomem` 实测 System RAM 起始于 0x808f4000，

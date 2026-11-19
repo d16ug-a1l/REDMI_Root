@@ -47,9 +47,12 @@ KernelSU LKM 常驻至下一次重启）。
 
 ## 日志
 
-- 成功运行日志与事后核验：ghostlock-app
-  `specs/dizi-ghostlock-port/analysis/root-success/`（`c2_p2_8_1.log`、
-  `evidence_214835.txt`）；门禁记录 `analysis/root-gate-record.md`。
+- 成功运行日志与事后核验已归档至本仓库：`docs/logs/DIZI-02/c2_p2_8_1.log`、
+  `docs/logs/DIZI-02/evidence_214835.txt`（log 为便于阅读剥离了 ANSI 颜色
+  控制符；原始字节 md5：log `18c92eb0efb3faf4285ca39f40ad3faf`、
+  evidence `557773995f48781ca060780702ecc3a6`）。
+- 完整证据链（含此前各轮日志与门禁归档）：ghostlock-app 工作区
+  `specs/dizi-ghostlock-port/analysis/`（未随本仓库分发）。
 
 ## 说明
 
