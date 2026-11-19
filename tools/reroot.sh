@@ -38,7 +38,9 @@ resolve_adb() {
     if grep -qi microsoft /proc/version 2>/dev/null; then
         for c in /mnt/c/platform-tools/adb.exe \
                  /mnt/c/Android/platform-tools/adb.exe \
-                 /mnt/c/Users/*/AppData/Local/Android/Sdk/platform-tools/adb.exe; do
+                 /mnt/c/Users/*/AppData/Local/Android/Sdk/platform-tools/adb.exe \
+                 /mnt/c/Users/*/scoop/shims/adb.exe \
+                 /mnt/c/ProgramData/chocolatey/bin/adb.exe; do
             if [ -x "$c" ]; then
                 ADB_EXE="$c"
                 ADB=wsl_adb
@@ -46,6 +48,13 @@ resolve_adb() {
                 return 0
             fi
         done
+        # adb.exe 在 Windows PATH 里（WSL interop 会把它带进 Linux PATH）
+        if command -v adb.exe >/dev/null 2>&1; then
+            ADB_EXE="$(command -v adb.exe)"
+            ADB=wsl_adb
+            echo "[*] adb(WSL→Windows PATH): $ADB_EXE"
+            return 0
+        fi
         echo "[*] WSL 环境但未找到 Windows adb.exe（在 Windows 侧安装 platform-tools 后体验最佳）"
     fi
     if command -v adb >/dev/null 2>&1; then
